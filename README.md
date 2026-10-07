@@ -123,7 +123,7 @@ A root scalar such as `"value"` is stored at the empty path `""`. Empty objects 
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) gives each check its own job. Format, Clippy, tests, the `list_paths` example, and benchmarks start together. Packaging waits until format, Clippy, tests, and the example have succeeded. The packaged crate is tested in a later job. The publish dry run waits until that packaged test and the benchmarks have both succeeded.
 
-[`.github/workflows/publish.yml`](.github/workflows/publish.yml) runs those same jobs on a version tag. It also checks that the tag matches `version` in `Cargo.toml`. `cargo publish` runs only after both of those succeed.
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml) runs when a pull request is merged into `master`. It reads `version` from `Cargo.toml`. If the tag `v` plus that version is not already on the repository, the version is new: the same checks run, then `cargo publish`, then the workflow pushes that tag. A later merge that leaves the version unchanged finds the tag and does not publish again.
 
 ## Publish the crate
 
@@ -132,14 +132,9 @@ A root scalar such as `"value"` is stored at the empty path `""`. Empty objects 
 3. Configure publishing in one of these ways:
    - **Trusted publishing** (no long-lived token). On crates.io, add a trusted publisher for repository `stewie1570/JsonTraits`, workflow `publish.yml`, and environment `crates-io`. Create a GitHub environment named `crates-io` on the repository. The workflow already requests `id-token: write`.
    - **API token.** Create a crates.io token and save it as the `CARGO_REGISTRY_TOKEN` repository secret.
-4. When `Cargo.toml` says `version = "0.1.0"`, tag that commit and push the tag:
+4. Merge a pull request into `master`. The workflow publishes when `v` plus the `Cargo.toml` version is not already a tag. The first such merge publishes `0.1.0` and pushes `v0.1.0`. To release `0.2.0` later, change `version` in `Cargo.toml` and merge that pull request.
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The tag text after `v` must equal the version in `Cargo.toml`. To release 0.2.0 later, change the version, commit, then push `v0.2.0`. A crates.io version cannot be overwritten. If a published version is broken, `cargo yank --version 0.1.0` hides it from new dependents without deleting it.
+A crates.io version cannot be overwritten. If a published version is broken, `cargo yank --version 0.1.0` hides it from new dependents without deleting it.
 
 ## Project map
 

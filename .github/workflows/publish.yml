@@ -1,8 +1,10 @@
 name: Publish
 
+# Merging a pull request pushes master. Publish only when that commit's
+# Cargo.toml version does not already have a v* tag.
 on:
   push:
-    tags: ["v*"]
+    branches: [master]
 
 permissions:
   contents: read
@@ -18,42 +20,82 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  verify:
-    name: Verify
-    uses: ./.github/workflows/ci.yml
-
-  version:
-    name: Tag matches Cargo.toml
+  release:
+    name: New version
     runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.version.outputs.publish }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - name: Require the tag to match Cargo.toml
+      - name: See if this version already has a tag
+        id: version
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          set -euo pipefail
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
-          if [[ "$tag" != "$version" ]]; then
-            echo "Tag v${tag} does not match crate version ${version}." >&2
-            echo "Cargo.toml and the git tag must both say ${version}." >&2
+          if [[ -z "$version" ]]; then
+            echo "Cargo.toml has no version." >&2
             exit 1
           fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null; then
+            echo "Tag v${version} already exists, so this merge does not publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v${version} is not on the repository yet. This merge will publish."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  verify:
+    name: Verify
+    needs: release
+    if: needs.release.outputs.publish == 'true'
+    uses: ./.github/workflows/ci.yml
 
   publish:
     name: Publish to crates.io
-    needs: [verify, version]
+    needs: [release, verify]
+    if: needs.release.outputs.publish == 'true'
     runs-on: ubuntu-latest
     environment: crates-io
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Publish to crates.io
+      - name: Publish to crates.io and tag the release
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
-          if [[ -z "${CARGO_REGISTRY_TOKEN}" ]]; then
-            unset CARGO_REGISTRY_TOKEN
+          set -euo pipefail
+          current="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          name="$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          if [[ "$current" != "$VERSION" ]]; then
+            echo "Cargo.toml version ${current} does not match detected version ${VERSION}." >&2
+            exit 1
           fi
-          cargo publish
+          code="$(curl -sS -A "json-traits-publish" -o /dev/null -w '%{http_code}' \
+            "https://crates.io/api/v1/crates/${name}/${VERSION}")"
+          if [[ "$code" == "200" ]]; then
+            echo "${name} ${VERSION} is already on crates.io."
+          elif [[ "$code" == "404" ]]; then
+            if [[ -z "${CARGO_REGISTRY_TOKEN}" ]]; then
+              unset CARGO_REGISTRY_TOKEN
+            fi
+            cargo publish
+          else
+            echo "crates.io lookup for ${name} ${VERSION} returned ${code}." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null; then
+            echo "Tag v${VERSION} is already present."
+          else
+            git tag "v${VERSION}"
+            git push origin "refs/tags/v${VERSION}"
+          fi
       - name: Drop packaged sources before the cache is saved
         if: always()
         run: rm -rf target/package
