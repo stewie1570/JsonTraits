@@ -57,7 +57,7 @@ Bring every method into scope with `use json_traits::prelude::*;`, or import `Js
 
 ## Check a PATCH, then diff the document
 
-`is_supported_by` is called on the path from the client. The argument is the list of patterns the server allows. `*` matches one path segment, so `contacts.*.info.name` matches every contact name and leaves the rest of the document alone.
+`is_supported_by` is called on the path from the client. The argument is the list of patterns the server allows. `*` matches one path segment, so an allow list containing `contacts.*.info.name` accepts every contact name.
 
 ```rust
 use json_traits::prelude::*;
