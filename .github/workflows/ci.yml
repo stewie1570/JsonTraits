@@ -27,3 +27,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run the pre-publish checks
         run: bash scripts/verify.sh
+      # cargo package extracts this crate under target/package, including tests/.
+      # rust-cache treats every directory named tests as a trybuild workspace and
+      # logs ENOENT when tests/target and tests/trybuild are absent.
+      - name: Drop packaged sources before the cache is saved
+        if: always()
+        run: rm -rf target/package
