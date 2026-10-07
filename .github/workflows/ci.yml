@@ -99,7 +99,7 @@ jobs:
             main_status=1
             printf 'Could not check out main %s\n' "$base" | tee bench-main.txt
           else
-            cargo bench --all-features -- --save-baseline main 2>&1 | tee bench-main.txt
+            cargo bench --all-features --bench json_paths -- --save-baseline main 2>&1 | tee bench-main.txt
             main_status=${PIPESTATUS[0]}
           fi
           git checkout --detach --force "$head"
@@ -107,7 +107,7 @@ jobs:
             pr_status=1
             printf 'Could not check out pull request %s\n' "$head" | tee bench-pr.txt
           else
-            cargo bench --all-features -- --baseline main 2>&1 | tee bench-pr.txt
+            cargo bench --all-features --bench json_paths -- --baseline main 2>&1 | tee bench-pr.txt
             pr_status=${PIPESTATUS[0]}
           fi
           printf 'main=%s\npr=%s\n' "$main_status" "$pr_status" > bench-status.txt
@@ -116,7 +116,7 @@ jobs:
           fi
       - name: Benchmark this commit
         if: github.event_name != 'pull_request'
-        run: cargo bench --all-features 2>&1 | tee bench-results.txt
+        run: cargo bench --all-features --bench json_paths 2>&1 | tee bench-results.txt
       - name: Upload benchmark output
         if: always()
         uses: actions/upload-artifact@v4
