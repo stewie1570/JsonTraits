@@ -1,7 +1,9 @@
-//! Flatten JSON documents into dotted paths, diff them, and match paths
-//! against patterns.
+//! Server-side helper for clients that address JSON the way
+//! [leaf-validator](https://www.npmjs.com/package/leaf-validator) does and
+//! PATCH individual leaves.
 //!
-//! This is a Rust port of
+//! Flatten a document into dotted paths, diff two documents, and match paths
+//! against patterns. This is the Rust port of
 //! [JsonElementExtensions](https://github.com/stewie1570/JsonElementExtensions).
 //! C# extension methods are traits here. Import a trait before calling its
 //! methods. That import is what adds `paths_and_values` to

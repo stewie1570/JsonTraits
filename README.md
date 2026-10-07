@@ -1,8 +1,12 @@
 # json-traits
 
-Rust port of [JsonElementExtensions](https://github.com/stewie1570/JsonElementExtensions). It flattens a JSON document into dotted paths, diffs two documents, and matches paths against patterns where `*` means one segment.
+Server-side helper for frontends that address JSON the way [leaf-validator](https://www.npmjs.com/package/leaf-validator) does, and that send a PATCH of the leaves that changed.
 
-`serde_json::Value` is the stand-in for .NET's `JsonElement`. Rust cannot add methods to a type from another crate directly, so the methods live on traits. Import the trait and the method is available. That import plays the same role as `using` an extension-method class in C#.
+[leaf-validator](https://github.com/stewie1570/leaf-validator) is the client library this crate was written to match. A screen binds a control to a dotted location such as `person.contact.phoneNumber`. Its `leafDiff` turns an edit into one entry per leaf, `{ location, updatedValue }`, instead of one blob for a whole new object. The client sends that list as a PATCH. Concurrent editors then overwrite only the leaves they changed. Those locations are the same dotted paths [MongoDB calls dot notation](https://www.mongodb.com/docs/manual/core/document/#dot-notation). [mongo-leaf-validator-example](https://github.com/stewie1570/mongo-leaf-validator-example) shows a server applying them. leaf-validator encourages the [normalized state shape](https://redux.js.org/usage/structuring-reducers/normalizing-state-shape): each value lives in one place, and an update names that place.
+
+This crate is the Rust server helper for that PATCH. [JsonElementExtensions](https://github.com/stewie1570/JsonElementExtensions) is the .NET one. Both flatten a stored document into the same leaf paths the client uses, diff two documents, and match paths against patterns so the server can accept only the leaves a caller is allowed to change. `*` matches one path segment.
+
+`serde_json::Value` stands in for .NET's `JsonElement`. The methods are traits. Import a trait and its methods are available on `Value`, the same way a `using` brings an extension method into scope.
 
 ```rust
 use json_traits::prelude::*;
@@ -85,6 +89,8 @@ Bring the methods into scope with `use json_traits::prelude::*;`, or import `Jso
 
 ## What the methods do
 
+A leaf-validator PATCH is a list of leaf locations. These methods are how the server speaks that same shape.
+
 `paths_and_values` walks a value and returns a `BTreeMap<String, JsonScalar>` of leaves. Object keys and array indexes become path segments:
 
 ```text
@@ -96,9 +102,9 @@ contacts.2.info.isAwesome
 
 A root scalar such as `"value"` is stored at the empty path `""`. Empty objects and empty arrays have no leaves, so they produce no paths.
 
-`diff_with` compares those leaves. Each difference is `(left, right)`. A path that exists on only one side uses `JsonScalar::Undefined` for the other side. The same method works on the maps returned by `paths_and_values`, which is how you diff after filtering.
+`diff_with` compares those leaves. Each difference is `(left, right)`. A path that exists on only one side uses `JsonScalar::Undefined` for the other side. That is the server's view of the same leaf diff the client would send. The method also works on the maps returned by `paths_and_values`, which is how you diff after filtering.
 
-`is_supported_by` reports whether a path matches any pattern. `is_a_path_match_with` is called on the pattern, not the path:
+`is_supported_by` reports whether a PATCH path is one the server allows. `is_a_path_match_with` is called on the pattern, not the path:
 
 ```rust
 "contacts.*.info.name".is_a_path_match_with("contacts.0.info.name");
