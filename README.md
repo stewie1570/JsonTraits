@@ -1,75 +1,43 @@
 # json-traits
 
-Server-side helper for frontends that address JSON the way [leaf-validator](https://www.npmjs.com/package/leaf-validator) does, and that send a PATCH of the leaves that changed.
+Rust helpers for JSON documents addressed by dotted leaf paths. Flatten a `serde_json::Value` into those paths, diff two documents leaf by leaf, and test a path against an allow list. A server uses that to accept a PATCH of individual leaves, such as the body produced by [leaf-validator](https://www.npmjs.com/package/leaf-validator)'s `leafDiff`.
 
-[leaf-validator](https://github.com/stewie1570/leaf-validator) is the client library this crate was written to match. A screen binds a control to a dotted location such as `person.contact.phoneNumber`. Its `leafDiff` turns an edit into one entry per leaf, `{ location, updatedValue }`, instead of one blob for a whole new object. The client sends that list as a PATCH. Concurrent editors then overwrite only the leaves they changed. Those locations are the same dotted paths [MongoDB calls dot notation](https://www.mongodb.com/docs/manual/core/document/#dot-notation). [mongo-leaf-validator-example](https://github.com/stewie1570/mongo-leaf-validator-example) shows a server applying them. leaf-validator encourages the [normalized state shape](https://redux.js.org/usage/structuring-reducers/normalizing-state-shape): each value lives in one place, and an update names that place.
+Version 0.1.0 is on [crates.io](https://crates.io/crates/json-traits). API docs are on [docs.rs](https://docs.rs/json-traits).
 
-This crate is the Rust server helper for that PATCH. [JsonElementExtensions](https://github.com/stewie1570/JsonElementExtensions) is the .NET one. Both flatten a stored document into the same leaf paths the client uses, diff two documents, and match paths against patterns so the server can accept only the leaves a caller is allowed to change. `*` matches one path segment.
+## Leaf paths
 
-`serde_json::Value` stands in for .NET's `JsonElement`. The methods are traits. Import a trait and its methods are available on `Value`, the same way a `using` brings an extension method into scope.
+A leaf is a JSON string, number, boolean, or `null`. Objects and arrays are containers. A path names one leaf by joining object keys and array indexes with `.`:
 
-```rust
-use json_traits::prelude::*;
-use serde_json::json;
-
-let left = json!({
-    "prop1": { "prop2": 1 },
-    "contacts": [
-        { "info": { "name": "Stewie" } },
-        { "info": { "number": 12 } }
-    ]
-});
-let right = json!({
-    "prop1": { "prop2": "value2" },
-    "contacts": [
-        { "info": { "name": "Stewie" } },
-        { "info": { "number": 13 } }
-    ]
-});
-
-// "prop1.prop2", "contacts.0.info.name", "contacts.1.info.number"
-let _paths = left.paths_and_values();
-
-// prop1.prop2 and contacts.1.info.number differ
-let _diff = left.diff_with(&right);
-
-let patterns = ["prop1.prop2", "contacts.*.info.name"];
-assert!("contacts.0.info.name".is_supported_by(patterns));
+```text
+person.contact.phoneNumber
+contacts.0.info.name
+contacts.1.info.number
 ```
 
-## Rust on this machine
+[leaf-validator](https://github.com/stewie1570/leaf-validator) is a React library that binds a control to one of these locations. Its `leafDiff` turns an edit into one entry per leaf:
 
-Stable Rust is installed with [rustup](https://rustup.rs/). New terminals pick it up from your shell profile. In a terminal that was already open, run:
-
-```bash
-. "$HOME/.cargo/env"
-rustc --version
+```json
+[
+  { "location": "person.contact.phoneNumber", "updatedValue": "111-222-3333" }
+]
 ```
 
-On another machine:
+`location` is the dotted path. `updatedValue` is the new leaf. Sending that list as a PATCH means two people editing the same document overwrite only the leaves each of them changed. [MongoDB calls the same addressing dot notation](https://www.mongodb.com/docs/manual/core/document/#dot-notation): `"contacts.2"` is the third array element, and `"person.contact.phoneNumber"` is a field inside an embedded document. [mongo-leaf-validator-example](https://github.com/stewie1570/mongo-leaf-validator-example) is a server that receives this list and applies each location with a MongoDB update.
 
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
+leaf-validator also has a `diff` that can put a whole new object in one entry. `leafDiff`, and this crate, expand that object into one entry per leaf inside it. The paths line up with a [normalized document](https://redux.js.org/usage/structuring-reducers/normalizing-state-shape): each value lives at one location, and an update names that location.
 
-This repository pins the stable toolchain in `rust-toolchain.toml`, including rustfmt and clippy. The first `cargo` command inside the directory installs that toolchain if it is missing.
+[JsonElementExtensions](https://github.com/stewie1570/JsonElementExtensions) is the .NET library for the same three operations. The methods here are traits on `serde_json::Value` and on `&str`. Import a trait, or the prelude, and the methods are in scope.
 
-Useful commands while learning the layout:
-
-| Command | What it does |
+| JsonElementExtensions | json-traits |
 | --- | --- |
-| `cargo test` | Runs the unit, integration, and documentation tests |
-| `cargo bench` | Runs the Criterion benchmarks |
-| `cargo doc --open` | Builds the API docs and opens them |
-| `cargo run --example list_paths < document.json` | Prints every leaf path in a file |
-| `cargo fmt --all -- --check` | Checks formatting |
-| `cargo clippy --all-targets --all-features -- -D warnings` | Lints the crate |
-| `cargo package --all-features` | Builds the crate archive |
-| `cargo publish --dry-run` | Checks that crates.io would accept the archive |
+| `PathsAndValuesDictionary` | `JsonPaths::paths_and_values` |
+| `DiffWith` | `DiffJson::diff_with` |
+| `IsSupportedBy` | `PathPattern::is_supported_by` |
+| `IsAPathMatchWith` | `PathPattern::is_a_path_match_with` |
 
-## Add it to another project
+## Add it to a project
 
-Once version 0.1.0 is on crates.io:
+The crate requires Rust 1.85 or newer. [rustup](https://rustup.rs/) installs the toolchain.
 
 ```toml
 [dependencies]
@@ -77,7 +45,7 @@ json-traits = "0.1"
 serde_json = "1"
 ```
 
-Until then, depend on the git repository:
+To depend on the repository instead of the published crate:
 
 ```toml
 [dependencies]
@@ -85,67 +53,151 @@ json-traits = { git = "https://github.com/stewie1570/JsonTraits" }
 serde_json = "1"
 ```
 
-Bring the methods into scope with `use json_traits::prelude::*;`, or import `JsonPaths`, `DiffJson`, and `PathPattern` individually.
+Bring every method into scope with `use json_traits::prelude::*;`, or import `JsonPaths`, `DiffJson`, and `PathPattern` on their own. `JsonScalar` is the leaf type and is exported from the crate root.
 
-## What the methods do
+## Check a PATCH, then diff the document
 
-A leaf-validator PATCH is a list of leaf locations. These methods are how the server speaks that same shape.
-
-`paths_and_values` walks a value and returns a `BTreeMap<String, JsonScalar>` of leaves. Object keys and array indexes become path segments:
-
-```text
-prop1.prop2
-contacts.0.info.name
-contacts.1.info.number
-contacts.2.info.isAwesome
-```
-
-A root scalar such as `"value"` is stored at the empty path `""`. Empty objects and empty arrays have no leaves, so they produce no paths.
-
-`diff_with` compares those leaves. Each difference is `(left, right)`. A path that exists on only one side uses `JsonScalar::Undefined` for the other side. That is the server's view of the same leaf diff the client would send. The method also works on the maps returned by `paths_and_values`, which is how you diff after filtering.
-
-`is_supported_by` reports whether a PATCH path is one the server allows. `is_a_path_match_with` is called on the pattern, not the path:
+`is_supported_by` is called on the path from the client. The argument is the list of patterns the server allows. `*` matches one path segment, so `contacts.*.info.name` matches every contact name and leaves the rest of the document alone.
 
 ```rust
-"contacts.*.info.name".is_a_path_match_with("contacts.0.info.name");
+use json_traits::prelude::*;
+use serde_json::json;
+
+let stored = json!({
+    "person": {
+        "firstName": "Ada",
+        "contact": {
+            "email": "ada@example.com",
+            "phoneNumber": "0123456789"
+        }
+    },
+    "contacts": [
+        { "info": { "name": "Ada" } },
+        { "info": { "name": "Grace" } }
+    ]
+});
+
+let allowed = [
+    "person.contact.phoneNumber",
+    "person.contact.email",
+    "contacts.*.info.name",
+];
+
+assert!("person.contact.phoneNumber".is_supported_by(allowed));
+assert!("contacts.1.info.name".is_supported_by(allowed));
+assert!(!"person.firstName".is_supported_by(allowed));
+
+let edited = json!({
+    "person": {
+        "firstName": "Ada",
+        "contact": {
+            "email": "ada@example.com",
+            "phoneNumber": "111-222-3333"
+        }
+    },
+    "contacts": [
+        { "info": { "name": "Ada" } },
+        { "info": { "name": "Grace" } }
+    ]
+});
+
+let diff = stored.diff_with(&edited);
+assert!(diff.contains_key("person.contact.phoneNumber"));
+assert_eq!(diff.len(), 1);
 ```
 
-`*` matches one whole segment. It does not match across dots, so `contacts.*.info.name` does not match `contacts.0.info.name.last`.
+Reject any `location` for which `is_supported_by` is false before writing `updatedValue`. This crate stops at the path check and the leaf diff. Writing the accepted leaves is the storage layer: the MongoDB example turns each location into a `$set` or an `$unset` on that dotted path.
+
+`diff_with` also works on the maps from `paths_and_values`, so a caller can filter the leaves and then diff:
+
+```rust
+use std::collections::BTreeMap;
+
+use json_traits::{DiffJson, JsonPaths, JsonScalar, PathPattern};
+use serde_json::json;
+
+let allowed = ["contacts.*.info.name"];
+let before = json!({"contacts": [{"info": {"name": "Ada"}}]}).paths_and_values();
+let after = json!({"contacts": [{"info": {"name": "Grace"}}]}).paths_and_values();
+
+let kept = |map: BTreeMap<String, JsonScalar>| {
+    map.into_iter()
+        .filter(|(path, _)| path.is_supported_by(allowed))
+        .collect::<BTreeMap<_, _>>()
+};
+
+let diff = kept(before).diff_with(&kept(after));
+assert!(diff.contains_key("contacts.0.info.name"));
+```
+
+## `paths_and_values`
+
+`JsonPaths::paths_and_values` walks a value and returns a `BTreeMap<String, JsonScalar>`. Object keys and array indexes become path segments. The map is sorted by path.
+
+```text
+person.contact.email
+person.contact.phoneNumber
+person.firstName
+contacts.0.info.name
+contacts.1.info.name
+```
+
+A document that is itself a string, number, boolean, or `null` is stored at the empty path `""`. An empty object or an empty array has no leaves, so it contributes no paths. Replacing a leaf with `{}` or `[]` shows up as that leaf disappearing. Array indexes are decimal and unpadded: the eleventh element is `10`.
+
+## `diff_with`
+
+`DiffJson::diff_with` compares leaves. Paths that are equal on both sides are omitted. Each difference is a pair `(left, right)`.
+
+`JsonScalar::Undefined` fills the side where the path is absent. A removed leaf is `(value, Undefined)`. An added leaf is `(Undefined, value)`. JSON `null` equals JSON `null`. A stored `null` compared with a missing path is a difference: `(Null, Undefined)`.
+
+In JsonElementExtensions, `DiffWith` calls `.Equals` on the boxed value, and that call throws when the value is null. Here `null` is a leaf.
+
+## Path patterns
+
+Call `is_supported_by` on the path. Call `is_a_path_match_with` on the pattern:
+
+```rust
+use json_traits::PathPattern;
+
+assert!("contacts.*.info.name".is_a_path_match_with("contacts.0.info.name"));
+```
+
+`*` matches one whole segment. `contacts.*.info.name` matches `contacts.0.info.name`. It does not match `contacts.0.info.name.last`, and `*` does not match `person.contact`. A pattern with no `*` matches only that exact path. An empty pattern list supports nothing.
+
+The same trait is implemented for `str`, so a `String` path works through deref.
+
+## `JsonScalar`
+
+`JsonScalar` is one leaf:
+
+| Variant | JSON |
+| --- | --- |
+| `Null` | `null` |
+| `Bool` | `true` or `false` |
+| `Number` | a JSON number |
+| `String` | a JSON string |
+| `Undefined` | the path is missing on this side of a diff |
+
+`JsonScalar::from_integer` builds a number from an `i64`. `JsonScalar::from_float` builds one from a finite `f64` and returns `None` for NaN and infinity. `From` is implemented for `bool`, `&str`, and `String`.
+
+Integer `1` and decimal `1.0` compare equal. Two integers compare exactly, so a pair of large integers that would collapse to the same floating-point number stay different. A JSON string and a JSON number are different even when their text looks the same.
 
 ## Behavior worth knowing
 
-- Paths are sorted, because the map is a `BTreeMap`.
-- Dots inside an object key are not escaped. `"a.b"` and `{"a":{"b": ...}}` become the same path. That matches the C# library.
-- JSON `null` equals JSON `null`. The C# `DiffWith` calls `.Equals` on the boxed value and throws when that value is null; this port treats null as a real leaf.
-- Integer `1` and decimal `1.0` are the same value. Two integers still compare exactly.
+- Paths come out sorted, because the map is a `BTreeMap`.
+- A dot inside an object key is copied into the path as written. The key `"a.b"` and the nested object `{"a": {"b": ...}}` both become the path `a.b`. JsonElementExtensions and MongoDB dot notation have the same overlap, so keep dots out of keys that you address this way.
+- Empty containers contribute no leaves. A PATCH that needs to record "this field is now an empty object" has to be represented by the leaves that disappeared.
 
-## Checks before a release
+## From a clone of this repository
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) gives each check its own job. Format, Clippy, tests, the `list_paths` example, and benchmarks start together. Packaging waits until format, Clippy, tests, and the example have succeeded. The packaged crate is tested in a later job. The publish dry run waits until that packaged test and the benchmarks have both succeeded.
-
-[`.github/workflows/publish.yml`](.github/workflows/publish.yml) runs when a pull request is merged into `master`. It reads `version` from `Cargo.toml`. If the tag `v` plus that version is not already on the repository, the version is new: the same checks run, then `cargo publish`, then the workflow pushes that tag. A later merge that leaves the version unchanged finds the tag and does not publish again.
-
-## Publish the crate
-
-1. Create the GitHub repository `stewie1570/JsonTraits` and push this project, including the workflow files.
-2. Create a [crates.io](https://crates.io/) account and verify your email.
-3. Configure publishing in one of these ways:
-   - **Trusted publishing** (no long-lived token). On crates.io, add a trusted publisher for repository `stewie1570/JsonTraits`, workflow `publish.yml`, and environment `crates-io`. Create a GitHub environment named `crates-io` on the repository. The workflow already requests `id-token: write`.
-   - **API token.** Create a crates.io token and save it as the `CARGO_REGISTRY_TOKEN` repository secret.
-4. Merge a pull request into `master`. The workflow publishes when `v` plus the `Cargo.toml` version is not already a tag. The first such merge publishes `0.1.0` and pushes `v0.1.0`. To release `0.2.0` later, change `version` in `Cargo.toml` and merge that pull request.
-
-A crates.io version cannot be overwritten. If a published version is broken, `cargo yank --version 0.1.0` hides it from new dependents without deleting it.
-
-## Project map
-
-```text
-src/lib.rs                 crate root
-src/scalar.rs              JsonScalar, one JSON leaf
-src/flatten.rs             JsonPaths::paths_and_values
-src/diff.rs                DiffJson::diff_with
-src/path_pattern.rs        PathPattern
-tests/                     the C# cases, ported, plus edge cases
-benches/json_paths.rs      Criterion benchmarks
-examples/list_paths.rs     read JSON from stdin, print paths
-.github/workflows/         CI jobs and crates.io publish
+```bash
+cargo test
+cargo run --example list_paths < document.json
+cargo doc --open
 ```
+
+`list_paths` reads a JSON document from standard input and prints every leaf path. `rust-toolchain.toml` selects the stable toolchain, including rustfmt and clippy, for commands run inside the repository.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
