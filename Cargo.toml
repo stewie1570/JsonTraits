@@ -1,0 +1,28 @@
+[package]
+name = "json-traits"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Flatten JSON into dotted paths, diff documents, and match path patterns"
+license = "MIT"
+authors = ["Stewart Anderson"]
+repository = "https://github.com/stewie1570/JsonTraits"
+homepage = "https://github.com/stewie1570/JsonTraits"
+documentation = "https://docs.rs/json-traits"
+readme = "README.md"
+keywords = ["json", "diff", "path", "flatten", "serde"]
+categories = ["encoding", "data-structures"]
+exclude = ["scripts/*", "rust-toolchain.toml"]
+
+[dependencies]
+serde_json = "1"
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+name = "json_paths"
+harness = false
+
+[lints.rust]
+missing_docs = "warn"
