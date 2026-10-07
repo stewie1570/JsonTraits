@@ -52,7 +52,7 @@ impl JsonPaths for Value {
         // One buffer is reused for every path. Before descending, remember
         // the length and truncate back to it so siblings do not keep the
         // previous segment.
-        walk(self, &mut String::new(), &mut paths);
+        walk(self, &mut String::with_capacity(64), &mut paths);
         paths
     }
 }
@@ -70,7 +70,7 @@ fn walk(value: &Value, path: &mut String, paths: &mut BTreeMap<String, JsonScala
         Value::Array(items) => {
             for (index, child) in items.iter().enumerate() {
                 let length = path.len();
-                push_segment(path, &index.to_string());
+                push_index(path, index);
                 walk(child, path, paths);
                 path.truncate(length);
             }
@@ -95,4 +95,24 @@ fn push_segment(path: &mut String, segment: &str) {
         path.push('.');
     }
     path.push_str(segment);
+}
+
+fn push_index(path: &mut String, index: usize) {
+    if !path.is_empty() {
+        path.push('.');
+    }
+    // usize decimal form fits in 20 digits. Writing it here avoids allocating
+    // a temporary string for every array element.
+    let mut digits = [0u8; 20];
+    let mut cursor = digits.len();
+    let mut value = index;
+    loop {
+        cursor -= 1;
+        digits[cursor] = b'0' + (value % 10) as u8;
+        value /= 10;
+        if value == 0 {
+            break;
+        }
+    }
+    path.push_str(std::str::from_utf8(&digits[cursor..]).unwrap());
 }

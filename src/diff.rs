@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 use serde_json::Value;
 
@@ -47,25 +48,54 @@ impl DiffJson for Value {
 
 impl DiffJson for BTreeMap<String, JsonScalar> {
     fn diff_with(&self, other: &Self) -> BTreeMap<String, (JsonScalar, JsonScalar)> {
-        let mut keys = BTreeSet::new();
-        keys.extend(self.keys().cloned());
-        keys.extend(other.keys().cloned());
-
-        keys.into_iter()
-            .filter_map(|key| {
-                let left = self.get(&key);
-                let right = other.get(&key);
-                match (left, right) {
-                    (Some(left), Some(right)) if left == right => None,
-                    _ => Some((
-                        key,
-                        (
-                            left.cloned().unwrap_or(JsonScalar::Undefined),
-                            right.cloned().unwrap_or(JsonScalar::Undefined),
-                        ),
-                    )),
+        // Both maps are already ordered, so walk them together. Equal leaves
+        // are skipped without cloning their paths.
+        let mut diff = BTreeMap::new();
+        let mut left_keys = self.iter();
+        let mut right_keys = other.iter();
+        let mut left = left_keys.next();
+        let mut right = right_keys.next();
+        loop {
+            match (left, right) {
+                (None, None) => break,
+                (Some((key, value)), None) => {
+                    diff.insert(key.clone(), (value.clone(), JsonScalar::Undefined));
+                    left = left_keys.next();
                 }
-            })
-            .collect()
+                (None, Some((key, value))) => {
+                    diff.insert(key.clone(), (JsonScalar::Undefined, value.clone()));
+                    right = right_keys.next();
+                }
+                (Some((left_key, left_value)), Some((right_key, right_value))) => {
+                    match left_key.cmp(right_key) {
+                        Ordering::Less => {
+                            diff.insert(
+                                left_key.clone(),
+                                (left_value.clone(), JsonScalar::Undefined),
+                            );
+                            left = left_keys.next();
+                        }
+                        Ordering::Greater => {
+                            diff.insert(
+                                right_key.clone(),
+                                (JsonScalar::Undefined, right_value.clone()),
+                            );
+                            right = right_keys.next();
+                        }
+                        Ordering::Equal => {
+                            if left_value != right_value {
+                                diff.insert(
+                                    left_key.clone(),
+                                    (left_value.clone(), right_value.clone()),
+                                );
+                            }
+                            left = left_keys.next();
+                            right = right_keys.next();
+                        }
+                    }
+                }
+            }
+        }
+        diff
     }
 }

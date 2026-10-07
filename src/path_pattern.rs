@@ -46,15 +46,34 @@ impl PathPattern for str {
     }
 
     fn is_a_path_match_with(&self, path: &str) -> bool {
-        let mut pattern_parts = self.split('.');
-        let mut path_parts = path.split('.');
-        loop {
-            match (pattern_parts.next(), path_parts.next()) {
-                (None, None) => return true,
-                (Some("*"), Some(_)) => {}
-                (Some(pattern_part), Some(path_part)) if pattern_part == path_part => {}
-                _ => return false,
-            }
+        if !self.as_bytes().contains(&b'*') {
+            return self == path;
         }
+        segments_match(self.as_bytes(), path.as_bytes())
+    }
+}
+
+fn segments_match(mut pattern: &[u8], mut path: &[u8]) -> bool {
+    loop {
+        let (pattern_segment, pattern_rest) = split_segment(pattern);
+        let (path_segment, path_rest) = split_segment(path);
+        if pattern_segment != b"*" && pattern_segment != path_segment {
+            return false;
+        }
+        match (pattern_rest, path_rest) {
+            (None, None) => return true,
+            (Some(pattern_rest), Some(path_rest)) => {
+                pattern = pattern_rest;
+                path = path_rest;
+            }
+            _ => return false,
+        }
+    }
+}
+
+fn split_segment(input: &[u8]) -> (&[u8], Option<&[u8]>) {
+    match input.iter().position(|&byte| byte == b'.') {
+        Some(index) => (&input[..index], Some(&input[index + 1..])),
+        None => (input, None),
     }
 }
