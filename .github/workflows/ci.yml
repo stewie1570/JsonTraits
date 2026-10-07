@@ -48,7 +48,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run the test suite
-        run: cargo test --all-features
+        run: cargo test --all-features 2>&1 | tee test-results.txt
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.txt
+          if-no-files-found: ignore
+          retention-days: 1
 
   example:
     name: Example
@@ -72,10 +80,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run the benchmarks
-        run: cargo bench --all-features
+      - name: Benchmark main and the pull request
+        if: github.event_name == 'pull_request'
+        run: |
+          set +e
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          git fetch --no-tags origin "$base"
+          git fetch --no-tags origin "pull/${{ github.event.pull_request.number }}/head"
+          # Drop any baseline restored from cache so main is compared with this run only.
+          rm -rf target/criterion
+          git checkout --detach --force "$base"
+          if [[ $? -ne 0 ]]; then
+            main_status=1
+            printf 'Could not check out main %s\n' "$base" | tee bench-main.txt
+          else
+            cargo bench --all-features --bench json_paths -- --save-baseline main 2>&1 | tee bench-main.txt
+            main_status=${PIPESTATUS[0]}
+          fi
+          git checkout --detach --force "$head"
+          if [[ $? -ne 0 ]]; then
+            pr_status=1
+            printf 'Could not check out pull request %s\n' "$head" | tee bench-pr.txt
+          else
+            cargo bench --all-features --bench json_paths -- --baseline main 2>&1 | tee bench-pr.txt
+            pr_status=${PIPESTATUS[0]}
+          fi
+          printf 'main=%s\npr=%s\n' "$main_status" "$pr_status" > bench-status.txt
+          if [[ "$main_status" -ne 0 || "$pr_status" -ne 0 ]]; then
+            exit 1
+          fi
+      - name: Benchmark this commit
+        if: github.event_name != 'pull_request'
+        run: cargo bench --all-features --bench json_paths 2>&1 | tee bench-results.txt
+      - name: Upload benchmark output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-*.txt
+          if-no-files-found: ignore
+          retention-days: 1
 
   package:
     name: Package
@@ -125,6 +174,42 @@ jobs:
             cd "$pkg_dir"
             CARGO_TARGET_DIR="$work/target" cargo test --all-features
           )
+
+  results-comment:
+    name: PR results comment
+    needs: [tests, benchmarks]
+    if: github.event_name == 'pull_request' && !cancelled()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download test output
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: test-results
+          path: results/tests
+      - name: Download benchmark output
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: bench-results
+          path: results/benchmarks
+      - name: Create or update the pull request comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TEST_CONCLUSION: ${{ needs.tests.result }}
+          BENCH_CONCLUSION: ${{ needs.benchmarks.result }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.event.pull_request.head.sha }}
+          BASE_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.event.pull_request.base.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 .github/scripts/pr_results_comment.py
 
   publish-dry-run:
     name: Publish dry run
