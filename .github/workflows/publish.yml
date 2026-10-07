@@ -16,20 +16,15 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  publish:
-    name: Verify and publish
+  verify:
+    name: Verify
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    name: Tag matches Cargo.toml
     runs-on: ubuntu-latest
-    environment: crates-io
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: Run the pre-publish checks
-        env:
-          REQUIRE_CLEAN_TREE: "1"
-        run: bash scripts/verify.sh
       - name: Require the tag to match Cargo.toml
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -39,6 +34,16 @@ jobs:
             echo "Cargo.toml and the git tag must both say ${version}." >&2
             exit 1
           fi
+
+  publish:
+    name: Publish to crates.io
+    needs: [verify, version]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -47,8 +52,6 @@ jobs:
             unset CARGO_REGISTRY_TOKEN
           fi
           cargo publish
-      # cargo package and cargo publish extract sources under target/package.
-      # rust-cache then logs ENOENT for the missing trybuild directories.
       - name: Drop packaged sources before the cache is saved
         if: always()
         run: rm -rf target/package

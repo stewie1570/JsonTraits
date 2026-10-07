@@ -58,7 +58,10 @@ Useful commands while learning the layout:
 | `cargo bench` | Runs the Criterion benchmarks |
 | `cargo doc --open` | Builds the API docs and opens them |
 | `cargo run --example list_paths < document.json` | Prints every leaf path in a file |
-| `bash scripts/verify.sh` | Runs the checks required before a release |
+| `cargo fmt --all -- --check` | Checks formatting |
+| `cargo clippy --all-targets --all-features -- -D warnings` | Lints the crate |
+| `cargo package --all-features` | Builds the crate archive |
+| `cargo publish --dry-run` | Checks that crates.io would accept the archive |
 
 ## Add it to another project
 
@@ -112,19 +115,9 @@ A root scalar such as `"value"` is stored at the empty path `""`. Empty objects 
 
 ## Checks before a release
 
-[`scripts/verify.sh`](scripts/verify.sh) is the release gate, locally and in GitHub Actions:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) gives each check its own job. Format, Clippy, tests, the `list_paths` example, and benchmarks start together. Packaging waits until format, Clippy, tests, and the example have succeeded. The packaged crate is tested in a later job. The publish dry run waits until that packaged test and the benchmarks have both succeeded.
 
-1. `cargo fmt --check`
-2. `cargo clippy --all-targets -- -D warnings`
-3. `cargo test`, including the examples in the documentation
-4. The `list_paths` example, run against a known document
-5. `cargo bench`
-6. `cargo package`, then `cargo test` again inside the packaged crate
-7. `cargo publish --dry-run`
-
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs that script on every pull request and on pushes to `master` or `main`.
-
-[`.github/workflows/publish.yml`](.github/workflows/publish.yml) runs the same script, checks that the git tag matches `version` in `Cargo.toml`, and only then runs `cargo publish`. A failing test, lint, benchmark, or packaged-crate test stops the release.
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml) runs those same jobs on a version tag. It also checks that the tag matches `version` in `Cargo.toml`. `cargo publish` runs only after both of those succeed.
 
 ## Publish the crate
 
@@ -153,6 +146,5 @@ src/path_pattern.rs        PathPattern
 tests/                     the C# cases, ported, plus edge cases
 benches/json_paths.rs      Criterion benchmarks
 examples/list_paths.rs     read JSON from stdin, print paths
-scripts/verify.sh          pre-publish checks
-.github/workflows/         CI and crates.io publish
+.github/workflows/         CI jobs and crates.io publish
 ```

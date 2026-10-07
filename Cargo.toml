@@ -12,7 +12,7 @@ documentation = "https://docs.rs/json-traits"
 readme = "README.md"
 keywords = ["json", "diff", "path", "flatten", "serde"]
 categories = ["encoding", "data-structures"]
-exclude = ["scripts/*", "rust-toolchain.toml"]
+exclude = ["rust-toolchain.toml"]
 
 [dependencies]
 serde_json = "1"

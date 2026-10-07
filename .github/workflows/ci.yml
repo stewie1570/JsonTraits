@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [master, main]
+  workflow_call:
 
 permissions:
   contents: read
@@ -16,20 +17,125 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  verify:
-    name: Verify package
+  format:
+    name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Run the pre-publish checks
-        run: bash scripts/verify.sh
+      - name: Lint
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run the test suite
+        run: cargo test --all-features
+
+  example:
+    name: Example
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: List paths from a sample document
+        run: |
+          set -euo pipefail
+          target_dir="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
+          mkdir -p "$target_dir"
+          printf '%s\n' '{"prop1":{"prop2":"value"},"contacts":[{"info":{"name":"Stewie"}}]}' \
+            | cargo run --quiet --example list_paths >"$target_dir/list_paths.out"
+          printf '%s\n' 'contacts.0.info.name' 'prop1.prop2' >"$target_dir/list_paths.expected"
+          diff -u "$target_dir/list_paths.expected" "$target_dir/list_paths.out"
+
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run the benchmarks
+        run: cargo bench --all-features
+
+  package:
+    name: Package
+    needs: [format, clippy, tests, example]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Package the crate
+        run: cargo package --all-features
+      - name: Upload the crate
+        uses: actions/upload-artifact@v4
+        with:
+          name: crate
+          path: target/package/*.crate
+          if-no-files-found: error
+          retention-days: 1
       # cargo package extracts this crate under target/package, including tests/.
       # rust-cache treats every directory named tests as a trybuild workspace and
       # logs ENOENT when tests/target and tests/trybuild are absent.
+      - name: Drop packaged sources before the cache is saved
+        if: always()
+        run: rm -rf target/package
+
+  packaged-tests:
+    name: Packaged tests
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Download the crate
+        uses: actions/download-artifact@v4
+        with:
+          name: crate
+          path: crate
+      - name: Test the packaged crate
+        run: |
+          set -euo pipefail
+          crate_file="$(find crate -name 'json-traits-*.crate' -print -quit)"
+          work="$(mktemp -d)"
+          tar -xzf "$crate_file" -C "$work"
+          pkg_dir="$(find "$work" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          (
+            cd "$pkg_dir"
+            CARGO_TARGET_DIR="$work/target" cargo test --all-features
+          )
+
+  publish-dry-run:
+    name: Publish dry run
+    needs: [packaged-tests, benchmarks]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check that crates.io would accept the package
+        run: cargo publish --dry-run
       - name: Drop packaged sources before the cache is saved
         if: always()
         run: rm -rf target/package
