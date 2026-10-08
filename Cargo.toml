@@ -1,6 +1,6 @@
 [package]
 name = "json-traits"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 description = "Server-side helper for leaf-validator style PATCH updates: flatten JSON, diff documents, and match dotted paths"
