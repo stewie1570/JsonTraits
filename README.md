@@ -12,7 +12,7 @@ These paths are the same locations [leaf-validator](https://www.npmjs.com/packag
 
 [MongoDB calls the same addressing dot notation](https://www.mongodb.com/docs/manual/core/document/#dot-notation): `"contacts.2"` is the third array element, and `"person.contact.phoneNumber"` is a field of an embedded document. [JsonElementExtensions](https://github.com/stewie1570/JsonElementExtensions) is the .NET library for the same operations.
 
-Version 0.1.0 is on [crates.io](https://crates.io/crates/json-traits). API docs are on [docs.rs](https://docs.rs/json-traits).
+Releases are published to [crates.io](https://crates.io/crates/json-traits). API docs are on [docs.rs](https://docs.rs/json-traits).
 
 ## Add it to a project
 
