@@ -43,113 +43,146 @@ Bring the methods into scope with `use json_traits::prelude::*;`, or import `Jso
 
 ## `paths_and_values`
 
-`JsonPaths::paths_and_values` walks a value and returns a `BTreeMap<String, JsonScalar>`. Object keys and array indexes become path segments. The map is sorted by path.
-
-A leaf is a JSON string, number, boolean, or `null`. Objects and arrays are containers, so the walk continues through them.
+`JsonPaths::paths_and_values` walks a value and returns a `BTreeMap<String, JsonScalar>`. A leaf is a JSON string, number, boolean, or `null`. Objects and arrays are containers, so the walk continues through them. Object keys and array indexes become path segments. The map is sorted by path.
 
 ```rust
-use json_traits::JsonPaths;
+use std::collections::BTreeMap;
+
+use json_traits::{JsonPaths, JsonScalar};
 use serde_json::json;
 
 let document = json!({
-    "person": {
-        "firstName": "Ada",
-        "contact": {
-            "email": "ada@example.com",
-            "phoneNumber": "0123456789"
-        }
-    },
+    "prop1": { "prop2": "value" },
     "contacts": [
-        { "info": { "name": "Ada" } },
-        { "info": { "name": "Grace" } }
+        { "info": { "name": "Stewie" } },
+        { "info": { "number": 12 } },
+        { "info": { "isAwesome": true } }
     ]
 });
 
-let paths = document.paths_and_values();
-assert!(paths.contains_key("person.contact.phoneNumber"));
-assert!(paths.contains_key("contacts.0.info.name"));
-assert!(paths.contains_key("contacts.1.info.name"));
-```
-
-```text
-contacts.0.info.name
-contacts.1.info.name
-person.contact.email
-person.contact.phoneNumber
-person.firstName
+assert_eq!(
+    document.paths_and_values(),
+    BTreeMap::from([
+        ("prop1.prop2".to_owned(), JsonScalar::from("value")),
+        (
+            "contacts.0.info.name".to_owned(),
+            JsonScalar::from("Stewie"),
+        ),
+        (
+            "contacts.1.info.number".to_owned(),
+            JsonScalar::from_integer(12),
+        ),
+        (
+            "contacts.2.info.isAwesome".to_owned(),
+            JsonScalar::from(true),
+        ),
+    ])
+);
 ```
 
 A value that is itself a string, number, boolean, or `null` is stored at the empty path `""`. An empty object or an empty array has no leaves, so it contributes no paths. Array indexes are decimal and unpadded: index 10 is the segment `10`.
 
 ## `diff_with`
 
-`DiffJson::diff_with` compares leaves. Paths that are equal on both sides are omitted. Each difference is a pair `(left, right)`.
-
-```rust
-use json_traits::DiffJson;
-use serde_json::json;
-
-let left = json!({
-    "person": { "contact": { "phoneNumber": "0123456789" } }
-});
-let right = json!({
-    "person": { "contact": { "phoneNumber": "111-222-3333" } }
-});
-
-let diff = left.diff_with(&right);
-assert!(diff.contains_key("person.contact.phoneNumber"));
-assert_eq!(diff.len(), 1);
-```
-
-`JsonScalar::Undefined` fills the side where the path is absent. A removed leaf is `(value, Undefined)`. An added leaf is `(Undefined, value)`. JSON `null` equals JSON `null`. A `null` leaf compared with a missing path is `(Null, Undefined)`.
-
-In JsonElementExtensions, `DiffWith` calls `.Equals` on the boxed value, and that call throws when the value is null. Here `null` is a leaf.
-
-`diff_with` is also implemented for `BTreeMap<String, JsonScalar>`, so two path maps can be compared directly. Filtering the maps first limits the comparison to the paths you keep:
+`DiffJson::diff_with` compares those leaves. Paths that are equal on both sides are omitted. Each difference is a pair `(left, right)`. `JsonScalar::Undefined` fills the side where the path is absent.
 
 ```rust
 use std::collections::BTreeMap;
 
-use json_traits::{DiffJson, JsonPaths, JsonScalar, PathPattern};
+use json_traits::{DiffJson, JsonScalar};
 use serde_json::json;
 
-let patterns = ["contacts.*.info.name"];
-let before = json!({"contacts": [{"info": {"name": "Ada"}}]}).paths_and_values();
-let after = json!({"contacts": [{"info": {"name": "Grace"}}]}).paths_and_values();
+let left = json!({
+    "prop1": { "prop2": 1 },
+    "contacts": [
+        { "info": { "name": "Stewie" } },
+        { "info": { "number": 12 } },
+        { "info": { "isAwesome": true } }
+    ]
+});
+let right = json!({
+    "prop1": { "prop2": "value2" },
+    "contacts": [
+        { "info": { "name": "Stewie" } },
+        { "info": { "number": 13 } },
+        { "info": { "isAwesome": false } },
+        { "info": { "isSomething": true } }
+    ]
+});
 
-let kept = |map: BTreeMap<String, JsonScalar>| {
-    map.into_iter()
-        .filter(|(path, _)| path.is_supported_by(patterns))
-        .collect::<BTreeMap<_, _>>()
-};
-
-let diff = kept(before).diff_with(&kept(after));
-assert!(diff.contains_key("contacts.0.info.name"));
+assert_eq!(
+    left.diff_with(&right),
+    BTreeMap::from([
+        (
+            "prop1.prop2".to_owned(),
+            (JsonScalar::from_integer(1), JsonScalar::from("value2")),
+        ),
+        (
+            "contacts.1.info.number".to_owned(),
+            (JsonScalar::from_integer(12), JsonScalar::from_integer(13)),
+        ),
+        (
+            "contacts.2.info.isAwesome".to_owned(),
+            (JsonScalar::from(true), JsonScalar::from(false)),
+        ),
+        (
+            "contacts.3.info.isSomething".to_owned(),
+            (JsonScalar::Undefined, JsonScalar::from(true)),
+        ),
+    ])
+);
 ```
+
+`contacts.0.info.name` is absent from the result because both documents have `"Stewie"` there. The new leaf `contacts.3.info.isSomething` is `(Undefined, true)`. A removed leaf is `(value, Undefined)`. JSON `null` equals JSON `null`. A `null` leaf compared with a missing path is `(Null, Undefined)`.
+
+In JsonElementExtensions, `DiffWith` calls `.Equals` on the boxed value, and that call throws when the value is null. Here `null` is a leaf.
+
+The same method is implemented for `BTreeMap<String, JsonScalar>`. `left.paths_and_values().diff_with(&right.paths_and_values())` returns the map above.
 
 ## Path patterns
 
-`is_supported_by` is called on the path and takes the patterns to test. `is_a_path_match_with` is called on the pattern and takes the path:
+`is_supported_by` is called on a path and takes the patterns to test. `*` matches one whole segment. `contacts.*.info.name` matches `contacts.0.info.name`. It leaves `contacts.0.info.name.last` unmatched, because that path has one more segment.
 
 ```rust
 use json_traits::PathPattern;
 
+let paths = [
+    "prop1.prop2",
+    "contacts.0.info.name",
+    "contacts.0.info.name.last",
+    "contacts.1.info.number",
+    "contacts.2.info.isAwesome",
+];
 let patterns = [
-    "person.contact.phoneNumber",
-    "person.contact.email",
+    "prop1.prop2",
     "contacts.*.info.name",
+    "contacts.*.info.number",
 ];
 
-assert!("person.contact.phoneNumber".is_supported_by(patterns));
-assert!("contacts.1.info.name".is_supported_by(patterns));
-assert!(!"person.firstName".is_supported_by(patterns));
+let matched: Vec<_> = paths
+    .into_iter()
+    .filter(|path| path.is_supported_by(patterns))
+    .collect();
+
+assert_eq!(
+    matched,
+    [
+        "prop1.prop2",
+        "contacts.0.info.name",
+        "contacts.1.info.number",
+    ]
+);
+```
+
+`is_a_path_match_with` is the same test called on the pattern:
+
+```rust
+use json_traits::PathPattern;
 
 assert!("contacts.*.info.name".is_a_path_match_with("contacts.0.info.name"));
 ```
 
-`*` matches one whole segment. `contacts.*.info.name` matches `contacts.0.info.name`. It leaves `contacts.0.info.name.last` unmatched, and `*` leaves `person.contact` unmatched. A pattern with no `*` matches that exact path. An empty pattern list matches nothing.
-
-The trait is implemented for `str`, so a `String` path works through deref.
+A pattern with no `*` matches that exact path. An empty pattern list matches nothing. The trait is implemented for `str`, so a `String` path works through deref.
 
 ## `JsonScalar`
 
