@@ -22,12 +22,12 @@ env:
 jobs:
   release:
     name: New version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       publish: ${{ steps.version.outputs.publish }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: See if this version already has a tag
         id: version
         run: |
@@ -56,13 +56,13 @@ jobs:
     name: Publish to crates.io
     needs: [release, verify]
     if: needs.release.outputs.publish == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: crates-io
     permissions:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Publish to crates.io and tag the release
